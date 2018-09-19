@@ -1,6 +1,7 @@
 import os, math
 import gdal
 import numpy as np
+import cv2
 from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 from quantized_mesh_tile.terrain import TerrainTile
@@ -130,12 +131,22 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
                 y_end_low = y_size_low
             zoom_size_x_low =round(zoom_size_low * (x_end_low - x_begine_low) / (x_max_low - x_min_low))
             zoom_size_y_low =round(zoom_size_low * (y_end_low - y_begine_low) / (y_max_low - y_min_low))
-            z_low = band_low.ReadAsArray(x_begine_low,
-                                         y_begine_low,
-                                         x_end_low - x_begine_low,
-                                         y_end_low - y_begine_low,
-                                         zoom_size_x_low,
-                                         zoom_size_y_low)
+            # 读取时 添加 buffer 防止平滑处理时边界错位
+            buf_size = 16
+            buf_size_x_in_tif = buf_size / zoom_size_x_low * (x_end_low - x_begine_low) / 2
+            buf_size_y_in_tif = buf_size / zoom_size_y_low * (y_end_low - y_begine_low) / 2
+            # 记得判断边界并处理
+            z_low = band_low.ReadAsArray(x_begine_low - buf_size_x_in_tif,
+                                         y_begine_low - buf_size_y_in_tif,
+                                         x_end_low - x_begine_low + buf_size_x_in_tif,
+                                         y_end_low - y_begine_low + buf_size_y_in_tif,
+                                         zoom_size_x_low + buf_size,
+                                         zoom_size_y_low + buf_size)
+            z_low = z_low.astype('f4')
+            # z_low 处理成 平滑处理
+            z_low = cv2.blur(z_low,(8, 8))
+            # z_low = cv2.GaussianBlur(z_low, (5, 5), 0)
+            z_low = z_low[8:-8, 8:-8]
 
             x_min_height = round((bound[0] - x0_height) / dx_height)
             x_begine_height = x_min_height
@@ -180,15 +191,12 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
                 if y + y_offset >= len(z_low):
                     continue
                 for x in range(zoom_size_x):
-                    z_height_v = z_height[y][x]
                     if x + x_offset >= len(z_low[y + y_offset]):
                         continue
+                    z_height_v = z_height[y][x]
                     z_low_v = z_low[y + y_offset][x + x_offset]
                     if z_height_v != 0 and z_height_v != z_low_v:
                         z_low[y + y_offset][x + x_offset] = z_height_v
-
-
-
             points_xyz = []
             z_low = np.array(z_low)
             for x in range(z_low.shape[1]):
@@ -201,6 +209,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
             index = tri.simplices
             points_xyz = (points_xyz + (x_begine_low, y_begine_low, 0)) * (dx_low, dy_low, 1) + (x0_low, y0_low, 0)
             write_terrain(fname, points_xyz, index)
+
 
 def write_terrain(fname, xyz, idx):
     '''
@@ -229,7 +238,7 @@ def write_terrain(fname, xyz, idx):
 if __name__ == '__main__':
     filename_low = r'E:\xy\doc\dem\shaoguan.tif'
     filename = r'E:\xy\doc\dem\dem.tif'
-    output_dir = r'E:\xy\doc\dem\result'
+    output_dir = r'E:\xy\doc\dem\result-blur'
     zoom = 13
     end_zoom = 20
     r = get_intersect_block(filename_low, filename, output_dir, zoom, end_zoom)
