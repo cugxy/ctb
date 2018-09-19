@@ -1,7 +1,11 @@
 import os, math
 import gdal
 import numpy as np
-
+from scipy.spatial import Delaunay
+from shapely.geometry import Polygon
+from quantized_mesh_tile.terrain import TerrainTile
+from quantized_mesh_tile.global_geodetic import GlobalGeodetic
+from quantized_mesh_tile.topology import TerrainTopology
 
 def tile_level(z):
     assert(z >= 0)
@@ -11,7 +15,7 @@ def tile_level(z):
     return xyz
 
 
-def get_tif_tile_bounds(filename, zoom):
+def get_tif_tile_bounds(filename, output_dir, zoom):
     '''
     根据 cesium 层级分块，读取 tif，利用 zoom 求得每一块的 gps 包围盒
     :param filename: tif 文件路径
@@ -44,55 +48,22 @@ def get_tif_tile_bounds(filename, zoom):
     tile_y_min = math.floor((lat_min - lat_begine) / lat_span)
     tile_x_max = math.ceil((lng_max - lng_begine) / lng_span)
     tile_y_max = math.ceil((lat_max - lat_begine) / lat_span)
-    result = []
+    result = {}
+
     for _x in range(tile_x_min, tile_x_max + 1):
         for _y in range(tile_y_min, tile_y_max + 1):
+            fname = os.path.join(output_dir, str(zoom))
+            fname = os.path.join(fname, str(_x))
+            fname = os.path.join(fname, str(_y))
             bound = [_x * lng_span + lng_begine,
                      _y * lat_span + lat_begine,
                      _x * lng_span + lng_span + lng_begine,
                      _y * lat_span + lat_span + lat_begine]
-            result.append(bound)
+            result[fname] = bound
     return result
 
-def get_z_in_bound(data_set, bound):
-    if data_set is None:
-        print('no data_set')
-        return None
-    band = data_set.GetRasterBand(1)
-    if band is None:
-        print('no band')
-        return None
-    x_size, y_size = data_set.RasterXSize, data_set.RasterYSize
-    x0, dx, _, y0, _, dy = data_set.GetGeoTransform()
-    x_min = round((bound[0] - x0) / dx)
-    x_begine = x_min
-    if x_begine > x_size:
-        return None
-    if x_begine < 0:
-        x_begine = 0
-    y_min = round((bound[3] - y0) / dy)
-    y_begine = y_min
-    if y_begine > y_size:
-        return None
-    if y_begine < 0:
-        y_begine = 0
-    x_max = round((bound[2] - x0) / dx)
-    x_end = x_max
-    if x_end < 0:
-        return None
-    if x_end > x_size:
-        x_end = x_size
-    y_max = round((bound[1] - y0) / dy)
-    y_end = y_max
-    if y_end < 0:
-        return None
-    if y_end > y_size:
-        y_end = y_size
-    z = band.ReadAsArray(x_begine, y_begine, x_end - x_begine, y_end - y_begine)
-    return z
 
-
-def get_intersect_block(filename_low, filename_height, zoom):
+def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoom):
     '''
     在低精度 tif 中，找到高精度 tif 所影响的地形块，并修改受影响值 生成 terrain
     :param filename: tif 文件路径
@@ -123,83 +94,137 @@ def get_intersect_block(filename_low, filename_height, zoom):
     x_size_height, y_size_height = data_set_height.RasterXSize, data_set_height.RasterYSize
     x0_height, dx_height, _, y0_height, _, dy_height = data_set_height.GetGeoTransform()
 
-    # 获取低精度 tif 中 高精度 tif 所影响的 地形块
-    bounds = get_tif_tile_bounds(filename_height, zoom)
-    # [[min_lng, min_lat, max_lng, max_lat], ...]
-    if bounds == []:
-        return
-    zoom_size_low = round((bounds[0][2]-bounds[0][0]) / dx_low)
-    for bound in bounds:
-        x_min_low = round((bound[0] - x0_low) / dx_low)
-        x_begine_low = x_min_low
-        if x_begine_low > x_size_low:
+    for _zoom in range(zoom, end_zoom):
+        # 获取高精度 tif 所影响的 地形块
+        bounds = get_tif_tile_bounds(filename_height, output_dir, _zoom)
+        # [[min_lng, min_lat, max_lng, max_lat], ...]
+        if bounds == {}:
             continue
-        if x_begine_low < 0:
-            x_begine_low = 0
-        y_min_low = round((bound[3] - y0_low) / dy_low)
-        y_begine_low = y_min_low
-        if y_begine_low > y_size_low:
-            continue
-        if y_begine_low < 0:
-            y_begine_low = 0
-        x_max_low = round((bound[2] - x0_low) / dx_low)
-        x_end_low = x_max_low
-        if x_end_low < 0:
-            continue
-        if x_end_low > x_size_low:
-            x_end_low = x_size_low
-        y_max_low = round((bound[1] - y0_low) / dy_low)
-        y_end_low = y_max_low
-        if y_end_low < 0:
-            continue
-        if y_end_low > y_size_low:
-            y_end_low = y_size_low
-        z_low = band_low.ReadAsArray(x_begine_low, y_begine_low, x_end_low - x_begine_low, y_end_low - y_begine_low)
+        _, value = next(iter(bounds.items()))
+        zoom_size_low = round((value[2]-value[0]) / dx_low * (2 ** (_zoom - zoom)))
+        for fname in bounds:
+            bound = bounds[fname]
+            x_min_low = round((bound[0] - x0_low) / dx_low)
+            x_begine_low = x_min_low
+            if x_begine_low > x_size_low:
+                continue
+            if x_begine_low < 0:
+                x_begine_low = 0
+            y_min_low = round((bound[3] - y0_low) / dy_low)
+            y_begine_low = y_min_low
+            if y_begine_low > y_size_low:
+                continue
+            if y_begine_low < 0:
+                y_begine_low = 0
+            x_max_low = round((bound[2] - x0_low) / dx_low)
+            x_end_low = x_max_low
+            if x_end_low < 0:
+                continue
+            if x_end_low > x_size_low:
+                x_end_low = x_size_low
+            y_max_low = round((bound[1] - y0_low) / dy_low)
+            y_end_low = y_max_low
+            if y_end_low < 0:
+                continue
+            if y_end_low > y_size_low:
+                y_end_low = y_size_low
+            zoom_size_x_low =round(zoom_size_low * (x_end_low - x_begine_low) / (x_max_low - x_min_low))
+            zoom_size_y_low =round(zoom_size_low * (y_end_low - y_begine_low) / (y_max_low - y_min_low))
+            z_low = band_low.ReadAsArray(x_begine_low,
+                                         y_begine_low,
+                                         x_end_low - x_begine_low,
+                                         y_end_low - y_begine_low,
+                                         zoom_size_x_low,
+                                         zoom_size_y_low)
 
-        x_min_height = round((bound[0] - x0_height) / dx_height)
-        x_begine_height = x_min_height
-        if x_begine_height > x_size_height:
-            continue
-        if x_begine_height < 0:
-            x_begine_height = 0
-        y_min_height = round((bound[3] - y0_height) / dy_height)
-        y_begine_height = y_min_height
-        if y_begine_height > y_size_height:
-            continue
-        if y_begine_height < 0:
-            y_begine_height = 0
-        x_max_height = round((bound[2] - x0_height) / dx_height)
-        x_end_height = x_max_height
-        if x_end_height < 0:
-            continue
-        if x_end_height > x_size_height:
-            x_end_height = x_size_height
-        y_max_height = round((bound[1] - y0_height) / dy_height)
-        y_end_height = y_max_height
-        if y_end_height< 0:
-            continue
-        if y_end_height > y_size_height:
-            y_end_height = y_size_height
-        z_height = band_height.ReadAsArray(x_begine_height,
-                                           y_begine_height,
-                                           x_end_height - x_begine_height,
-                                           y_end_height - y_begine_height,
-                                           round(zoom_size_low * (x_end_height - x_begine_height) / (x_max_height - x_min_height)),
-                                           round(zoom_size_low * (y_end_height - y_begine_height) / (y_max_height - y_min_height)))
+            x_min_height = round((bound[0] - x0_height) / dx_height)
+            x_begine_height = x_min_height
+            if x_begine_height > x_size_height:
+                continue
+            if x_begine_height < 0:
+                x_begine_height = 0
+            y_min_height = round((bound[3] - y0_height) / dy_height)
+            y_begine_height = y_min_height
+            if y_begine_height > y_size_height:
+                continue
+            if y_begine_height < 0:
+                y_begine_height = 0
+            x_max_height = round((bound[2] - x0_height) / dx_height)
+            x_end_height = x_max_height
+            if x_end_height < 0:
+                continue
+            if x_end_height > x_size_height:
+                x_end_height = x_size_height
+            y_max_height = round((bound[1] - y0_height) / dy_height)
+            y_end_height = y_max_height
+            if y_end_height< 0:
+                continue
+            if y_end_height > y_size_height:
+                y_end_height = y_size_height
+            zoom_size_x = round(zoom_size_low * (x_end_height - x_begine_height) / (x_max_height - x_min_height))
+            zoom_size_y =  round(zoom_size_low * (y_end_height - y_begine_height) / (y_max_height - y_min_height))
+            z_height = band_height.ReadAsArray(x_begine_height,
+                                               y_begine_height,
+                                               x_end_height - x_begine_height,
+                                               y_end_height - y_begine_height,
+                                               zoom_size_x,
+                                               zoom_size_y)
 
+            lng_height = x0_height + x_begine_height * dx_height
+            lat_height = y0_height + y_begine_height * dy_height
+            lng_low = x0_low + x_begine_low * dx_low
+            lat_low = y0_low + y_begine_low * dy_low
+            x_offset = round((lng_height - lng_low) / dx_low)
+            y_offset = round((lat_height - lat_low) / dy_low)
+            for x in range(zoom_size_x):
+                for y in range(zoom_size_y):
+                    z_height_v = z_height[y][x]
+                    z_low_v = z_low[y + y_offset][x + x_offset]
+                    if z_height_v != 0 and z_height_v != z_low_v:
+                        z_low[y + y_offset][x + x_offset] = z_height_v
 
-        pass
+            points_xyz = []
+            z_low = np.array(z_low)
+            for x in range(z_low.shape[1]):
+                for y in range(z_low.shape[0]):
+                    point_xyz = [x, y, z_low[y, x]]
+                    points_xyz.append(point_xyz)
+            points_xyz = np.array(points_xyz)
+            points_xy = points_xyz[:, 0:2]
+            tri = Delaunay(points_xy)
+            index = tri.simplices
+            points_xyz = (points_xyz + (x_begine_low, y_begine_low, 0)) * (dx_low, dy_low, 1) + (x0_low, y0_low, 0)
+            write_terrain(fname, points_xyz, index)
 
-
-
-
-
-    pass
+def write_terrain(fname, xyz, idx):
+    '''
+	mash 三角网写入 terrain 文件，当该文件存在时，直接覆盖
+	:param fname: terrain文件名
+	:param xyz: 顶点
+	:param idx: 索引
+	:return: None
+	'''
+    wkts = []
+    for _ in range(idx.shape[0]):
+        tri = xyz[idx[_]]
+        triP = Polygon([(tri[0][0], tri[0][1], tri[0][2])
+                           , (tri[1][0], tri[1][1], tri[1][2])
+                           , (tri[2][0], tri[2][1], tri[2][2])])
+        wkts.append(triP.wkt)
+    topology = TerrainTopology(geometries=wkts)
+    tile = TerrainTile(topology=topology)
+    if not os.path.exists(os.path.dirname(fname)):
+        os.makedirs(os.path.dirname(fname))
+    if os.path.exists('%s.terrain' %fname):
+        os.remove('%s.terrain' %fname)
+    tile.toFile('%s.terrain' %fname, gzipped=True)
 
 
 if __name__ == '__main__':
-    filename_low = r'E:\xy\doc\dem\cliped.tif'
+    filename_low = r'E:\xy\doc\dem\shaoguan.tif'
     filename = r'E:\xy\doc\dem\dem.tif'
+    output_dir = r'E:\xy\doc\dem\result'
     zoom = 13
-    r = get_intersect_block(filename_low, filename, zoom)
+    end_zoom = 20
+    r = get_intersect_block(filename_low, filename, output_dir, zoom, end_zoom)
     pass
