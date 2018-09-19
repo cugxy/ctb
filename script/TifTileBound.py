@@ -176,12 +176,18 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
             lat_low = y0_low + y_begine_low * dy_low
             x_offset = round((lng_height - lng_low) / dx_low)
             y_offset = round((lat_height - lat_low) / dy_low)
-            for x in range(zoom_size_x):
-                for y in range(zoom_size_y):
+            for y in range(zoom_size_y):
+                if y + y_offset >= len(z_low):
+                    continue
+                for x in range(zoom_size_x):
                     z_height_v = z_height[y][x]
+                    if x + x_offset >= len(z_low[y + y_offset]):
+                        continue
                     z_low_v = z_low[y + y_offset][x + x_offset]
                     if z_height_v != 0 and z_height_v != z_low_v:
                         z_low[y + y_offset][x + x_offset] = z_height_v
+
+
 
             points_xyz = []
             z_low = np.array(z_low)
