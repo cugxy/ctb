@@ -133,20 +133,24 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
             zoom_size_y_low =round(zoom_size_low * (y_end_low - y_begine_low) / (y_max_low - y_min_low))
             # 读取时 添加 buffer 防止平滑处理时边界错位
             buf_size = 16
-            buf_size_x_in_tif = buf_size / zoom_size_x_low * (x_end_low - x_begine_low) / 2
-            buf_size_y_in_tif = buf_size / zoom_size_y_low * (y_end_low - y_begine_low) / 2
+            buf_size_x_in_tif = round(buf_size / zoom_size_x_low * (x_end_low - x_begine_low) / 2)
+            buf_size_y_in_tif = round(buf_size / zoom_size_y_low * (y_end_low - y_begine_low) / 2)
             # 记得判断边界并处理
             z_low = band_low.ReadAsArray(x_begine_low - buf_size_x_in_tif,
                                          y_begine_low - buf_size_y_in_tif,
-                                         x_end_low - x_begine_low + buf_size_x_in_tif,
-                                         y_end_low - y_begine_low + buf_size_y_in_tif,
+                                         x_end_low - x_begine_low + 2 * buf_size_x_in_tif,
+                                         y_end_low - y_begine_low + 2 * buf_size_y_in_tif,
                                          zoom_size_x_low + buf_size,
-                                         zoom_size_y_low + buf_size)
-            z_low = z_low.astype('f4')
+                                         zoom_size_y_low + buf_size).astype('f4')
             # z_low 处理成 平滑处理
-            z_low = cv2.blur(z_low,(8, 8))
-            # z_low = cv2.GaussianBlur(z_low, (5, 5), 0)
+            z_low = cv2.blur(z_low,(7, 7))
             z_low = z_low[8:-8, 8:-8]
+            # z_low = band_low.ReadAsArray(x_begine_low,
+            #                              y_begine_low,
+            #                              x_end_low - x_begine_low,
+            #                              y_end_low - y_begine_low,
+            #                              zoom_size_x_low,
+            #                              zoom_size_y_low).astype('f4')
 
             x_min_height = round((bound[0] - x0_height) / dx_height)
             x_begine_height = x_min_height
