@@ -137,46 +137,60 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
                                          zoom_size_low + buf_size * 2).astype('f4')
             # z_low 处理成 平滑处理
             z_low = cv2.blur(z_low,(7, 7))
-            z_low = z_low[buf_size:-buf_size, buf_size:-buf_size]
+            # z_low = z_low[buf_size:-buf_size, buf_size:-buf_size]
 
             # 读取 高精度 地形
             x_min_height = round((bound[0] - x0_height) / dx_height)
-            x_begine_height = x_min_height
+            y_min_height = round((bound[3] - y0_height) / dy_height)
+            x_max_height = round((bound[2] - x0_height) / dx_height)
+            y_max_height = round((bound[1] - y0_height) / dy_height)
+
+            buf_size_height = round(buf_size / zoom_size_low * (x_max_height - x_min_height))
+            buf_size_height_left = 0
+            x_begine_height = x_min_height - buf_size_height
             if x_begine_height > x_size_height:
                 continue
             if x_begine_height < 0:
+                buf_size_height_left = round(max((x_min_height - 0) / (x_max_height - x_min_height) * zoom_size_low, 0))
                 x_begine_height = 0
-            y_min_height = round((bound[3] - y0_height) / dy_height)
-            y_begine_height = y_min_height
+
+            buf_size_height_botton = 0
+            y_begine_height = y_min_height - buf_size_height
             if y_begine_height > y_size_height:
                 continue
             if y_begine_height < 0:
+                buf_size_height_botton = round(max((y_min_height - 0)/(x_max_height - x_min_height)*zoom_size_low, 0))
                 y_begine_height = 0
-            x_max_height = round((bound[2] - x0_height) / dx_height)
-            x_end_height = x_max_height
+
+            buf_size_height_right = 0
+            x_end_height = x_max_height + buf_size_height
             if x_end_height < 0:
                 continue
             if x_end_height > x_size_height:
+                buf_size_height_right = round(max((x_size_height - x_max_height)/(x_max_height - x_min_height)*zoom_size_low, 0))
                 x_end_height = x_size_height
-            y_max_height = round((bound[1] - y0_height) / dy_height)
-            y_end_height = y_max_height
-            if y_end_height< 0:
+
+            buf_size_height_top = 0
+            y_end_height = y_max_height + buf_size_height
+            if y_end_height < 0:
                 continue
             if y_end_height > y_size_height:
+                buf_size_height_top = round(max((y_size_height - y_max_height)/(x_max_height - x_min_height)*zoom_size_low, 0))
                 y_end_height = y_size_height
+
             zoom_size_x = round(zoom_size_low * (x_end_height - x_begine_height) / (x_max_height - x_min_height))
             zoom_size_y = round(zoom_size_low * (y_end_height - y_begine_height) / (y_max_height - y_min_height))
             z_height = band_height.ReadAsArray(x_begine_height,
                                                y_begine_height,
                                                x_end_height - x_begine_height,
                                                y_end_height - y_begine_height,
-                                               zoom_size_x,
-                                               zoom_size_y)
+                                               zoom_size_x + buf_size_height_left + buf_size_height_right,
+                                               zoom_size_y + buf_size_height_top + buf_size_height_botton)
             # 求 高精度地形相对于 低精度地形 offset
             lng_height = x0_height + x_begine_height * dx_height
             lat_height = y0_height + y_begine_height * dy_height
-            lng_low = x0_low + (x_begine_low + buf_size_low) * dx_low
-            lat_low = y0_low + (y_begine_low + buf_size_low) * dy_low
+            lng_low = x0_low + x_begine_low * dx_low
+            lat_low = y0_low + y_begine_low * dy_low
             x_offset = round((lng_height - lng_low) / dx_low)
             y_offset = round((lat_height - lat_low) / dy_low)
 
@@ -191,6 +205,23 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
                     z_low_v = z_low[y + y_offset][x + x_offset]
                     if z_height_v != 0 and z_height_v != z_low_v:
                         z_low[y + y_offset][x + x_offset] = z_height_v
+
+            z_low = cv2.GaussianBlur(z_low, (5, 5), 0)
+            # 替换
+            for y in range(zoom_size_y):
+                if y + y_offset >= len(z_low):
+                    continue
+                for x in range(zoom_size_x):
+                    if x + x_offset >= len(z_low[y + y_offset]):
+                        continue
+                    z_height_v = z_height[y][x]
+                    z_low_v = z_low[y + y_offset][x + x_offset]
+                    if z_height_v != 0 and z_height_v != z_low_v:
+                        z_low[y + y_offset][x + x_offset] = z_height_v
+            # 去除 buf
+            z_low = z_low[buf_size:-buf_size, buf_size:-buf_size]
+
+            # 生成 terrain 文件
             points_xyz = []
             z_low = np.array(z_low)
             for x in range(z_low.shape[1]):
@@ -201,7 +232,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
             points_xy = points_xyz[:, 0:2]
             tri = Delaunay(points_xy)
             index = tri.simplices
-            points_xyz = (points_xyz + (x_begine_low + buf_size_low, y_begine_low + buf_size_low, 0)) * (dx_low, dy_low, 1) + (x0_low, y0_low, 0)
+            points_xyz = (points_xyz + (x_min_low, y_min_low, 0)) * (dx_low, dy_low, 1) + (x0_low, y0_low, 0)
             write_terrain(fname, points_xyz, index)
 
 
