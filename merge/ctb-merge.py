@@ -174,8 +174,8 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
 
             lng_height = x0_height + x_begine_height * dx_height
             lat_height = y0_height + y_begine_height * dy_height
-            lng_low = x0_low + x_begine_low * dx_low
-            lat_low = y0_low + y_begine_low * dy_low
+            lng_low = x0_low + (x_begine_low + buf_size_low) * dx_low
+            lat_low = y0_low + (y_begine_low + buf_size_low) * dy_low
             x_offset = round((lng_height - lng_low) / dx_low)
             y_offset = round((lat_height - lat_low) / dy_low)
             for y in range(zoom_size_y):
