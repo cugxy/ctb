@@ -95,7 +95,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
     x_size_height, y_size_height = data_set_height.RasterXSize, data_set_height.RasterYSize
     x0_height, dx_height, _, y0_height, _, dy_height = data_set_height.GetGeoTransform()
 
-    for _zoom in range(zoom, end_zoom):
+    for _zoom in range(zoom, end_zoom + 1):
         # 获取高精度 tif 所影响的 地形块
         bounds = get_tif_tile_bounds(filename_height, output_dir, _zoom)
         # [[min_lng, min_lat, max_lng, max_lat], ...]
@@ -106,51 +106,38 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
         for fname in bounds:
             bound = bounds[fname]
             x_min_low = round((bound[0] - x0_low) / dx_low)
-            x_begine_low = x_min_low
-            if x_begine_low > x_size_low:
-                continue
-            if x_begine_low < 0:
-                x_begine_low = 0
             y_min_low = round((bound[3] - y0_low) / dy_low)
-            y_begine_low = y_min_low
-            if y_begine_low > y_size_low:
-                continue
-            if y_begine_low < 0:
-                y_begine_low = 0
             x_max_low = round((bound[2] - x0_low) / dx_low)
-            x_end_low = x_max_low
-            if x_end_low < 0:
-                continue
-            if x_end_low > x_size_low:
-                x_end_low = x_size_low
             y_max_low = round((bound[1] - y0_low) / dy_low)
-            y_end_low = y_max_low
-            if y_end_low < 0:
-                continue
-            if y_end_low > y_size_low:
-                y_end_low = y_size_low
-            zoom_size_x_low =round(zoom_size_low * (x_end_low - x_begine_low) / (x_max_low - x_min_low))
-            zoom_size_y_low =round(zoom_size_low * (y_end_low - y_begine_low) / (y_max_low - y_min_low))
+
             # 读取时 添加 buffer 防止平滑处理时边界错位
-            buf_size = 16
-            buf_size_x_in_tif = round(buf_size / zoom_size_x_low * (x_end_low - x_begine_low) / 2)
-            buf_size_y_in_tif = round(buf_size / zoom_size_y_low * (y_end_low - y_begine_low) / 2)
-            # 记得判断边界并处理
-            z_low = band_low.ReadAsArray(x_begine_low - buf_size_x_in_tif,
-                                         y_begine_low - buf_size_y_in_tif,
-                                         x_end_low - x_begine_low + 2 * buf_size_x_in_tif,
-                                         y_end_low - y_begine_low + 2 * buf_size_y_in_tif,
-                                         zoom_size_x_low + buf_size,
-                                         zoom_size_y_low + buf_size).astype('f4')
+            buf_size = 8
+            buf_size_low = round(buf_size / zoom_size_low * (x_max_low - x_min_low))
+            x_begine_low = x_min_low - buf_size_low
+            if x_begine_low > x_size_low or x_begine_low < 0:
+                print('Low-precision terrain does not completely cover %s' % fname)
+                continue
+            y_begine_low = y_min_low - buf_size_low
+            if y_begine_low > y_size_low or y_begine_low < 0:
+                print('Low-precision terrain does not completely cover %s' % fname)
+                continue
+            x_end_low = x_max_low + buf_size_low
+            if x_end_low < 0 or x_end_low > x_size_low:
+                print('Low-precision terrain does not completely cover %s' % fname)
+                continue
+            y_end_low = y_max_low + buf_size_low
+            if y_end_low < 0 or y_end_low > y_size_low:
+                print('Low-precision terrain does not completely cover %s' % fname)
+                continue
+            z_low = band_low.ReadAsArray(x_begine_low,
+                                         y_begine_low,
+                                         x_end_low - x_begine_low,
+                                         y_end_low - y_begine_low,
+                                         zoom_size_low + buf_size * 2,
+                                         zoom_size_low + buf_size * 2).astype('f4')
             # z_low 处理成 平滑处理
             z_low = cv2.blur(z_low,(7, 7))
-            z_low = z_low[8:-8, 8:-8]
-            # z_low = band_low.ReadAsArray(x_begine_low,
-            #                              y_begine_low,
-            #                              x_end_low - x_begine_low,
-            #                              y_end_low - y_begine_low,
-            #                              zoom_size_x_low,
-            #                              zoom_size_y_low).astype('f4')
+            z_low = z_low[buf_size:-buf_size, buf_size:-buf_size]
 
             x_min_height = round((bound[0] - x0_height) / dx_height)
             x_begine_height = x_min_height
@@ -211,7 +198,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
             points_xy = points_xyz[:, 0:2]
             tri = Delaunay(points_xy)
             index = tri.simplices
-            points_xyz = (points_xyz + (x_begine_low, y_begine_low, 0)) * (dx_low, dy_low, 1) + (x0_low, y0_low, 0)
+            points_xyz = (points_xyz + (x_begine_low + buf_size_low, y_begine_low + buf_size_low, 0)) * (dx_low, dy_low, 1) + (x0_low, y0_low, 0)
             write_terrain(fname, points_xyz, index)
 
 
@@ -244,6 +231,6 @@ if __name__ == '__main__':
     filename = r'E:\xy\doc\dem\dem.tif'
     output_dir = r'E:\xy\doc\dem\result-blur'
     zoom = 13
-    end_zoom = 20
+    end_zoom = 16
     r = get_intersect_block(filename_low, filename, output_dir, zoom, end_zoom)
     pass
