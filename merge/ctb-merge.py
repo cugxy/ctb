@@ -110,7 +110,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
             x_max_low = round((bound[2] - x0_low) / dx_low)
             y_max_low = round((bound[1] - y0_low) / dy_low)
 
-            # 读取时 添加 buffer 防止平滑处理时边界错位
+            # 读取低精度 地形 要求低精度地形完整包含整块， 读取时 添加 buffer 防止平滑处理时边界错位
             buf_size = 8
             buf_size_low = round(buf_size / zoom_size_low * (x_max_low - x_min_low))
             x_begine_low = x_min_low - buf_size_low
@@ -139,6 +139,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
             z_low = cv2.blur(z_low,(7, 7))
             z_low = z_low[buf_size:-buf_size, buf_size:-buf_size]
 
+            # 读取 高精度 地形
             x_min_height = round((bound[0] - x0_height) / dx_height)
             x_begine_height = x_min_height
             if x_begine_height > x_size_height:
@@ -164,20 +165,22 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
             if y_end_height > y_size_height:
                 y_end_height = y_size_height
             zoom_size_x = round(zoom_size_low * (x_end_height - x_begine_height) / (x_max_height - x_min_height))
-            zoom_size_y =  round(zoom_size_low * (y_end_height - y_begine_height) / (y_max_height - y_min_height))
+            zoom_size_y = round(zoom_size_low * (y_end_height - y_begine_height) / (y_max_height - y_min_height))
             z_height = band_height.ReadAsArray(x_begine_height,
                                                y_begine_height,
                                                x_end_height - x_begine_height,
                                                y_end_height - y_begine_height,
                                                zoom_size_x,
                                                zoom_size_y)
-
+            # 求 高精度地形相对于 低精度地形 offset
             lng_height = x0_height + x_begine_height * dx_height
             lat_height = y0_height + y_begine_height * dy_height
             lng_low = x0_low + (x_begine_low + buf_size_low) * dx_low
             lat_low = y0_low + (y_begine_low + buf_size_low) * dy_low
             x_offset = round((lng_height - lng_low) / dx_low)
             y_offset = round((lat_height - lat_low) / dy_low)
+
+            # 替换
             for y in range(zoom_size_y):
                 if y + y_offset >= len(z_low):
                     continue
