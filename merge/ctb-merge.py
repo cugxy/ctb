@@ -11,6 +11,8 @@ from quantized_mesh_tile.topology import TerrainTopology
 from scipy import interpolate
 
 import matplotlib.pyplot as plt
+import pylab as pl
+import mpl_toolkits.mplot3d
 from IPython import embed
 
 def tile_level(z):
@@ -112,17 +114,16 @@ def merge_and_cut(filename_low, filename_height, output_dir, start_zoom, end_zoo
     for zoom in range(start_zoom, end_zoom + 1):
         # merge
         # test-------------------------------------------------------------------------------------------------------------------------
-        # zoom += 4
+        # zoom += 1
         # test-------------------------------------------------------------------------------------------------------------------------
         ratio = 2 ** (zoom - start_zoom)
         dsize_low = ((x_size + buf_size * 2) * ratio, (y_size + buf_size * 2) * ratio)
         _z_low_with_buf = cv2.resize(src=z_low_with_buf, dsize=dsize_low, interpolation=cv2.INTER_LINEAR)
         dsize_height = (x_size * ratio, y_size * ratio)
-        # _z_height = cv2.resize(src=z_height, dsize=dsize_height, interpolation=cv2.INTER_NEAREST)
+        _z_height = cv2.resize(src=z_height, dsize=dsize_height, interpolation=cv2.INTER_CUBIC)
         z_height = band_height.ReadAsArray(0, 0, x_size_height, y_size_height, x_size * ratio, y_size * ratio).astype('f4')
         _z_height = z_height
         bound_yx = get_data_bound(_z_height, 0.8)
-
         # test 展示边界 ----------------------------------------------------------------------------------------------------------------------------------
         if 0:
             fig, ax = plt.subplots()
@@ -134,7 +135,6 @@ def merge_and_cut(filename_low, filename_height, output_dir, start_zoom, end_zoo
             plt.show()
         # test----------------------------------------------------------------------------------------------------------------------------------
 
-        _yx_offset = buf_size * ratio
         # 如果没有边界 则，不融合，直接采用低精度数据 cut
         if bound_yx.shape[0] != 0:
             bound_yx = bound_yx.astype('i4')
@@ -173,14 +173,39 @@ def merge_and_cut(filename_low, filename_height, output_dir, start_zoom, end_zoo
             for _y_edge in range(0, (y_size + buf_size * 2) * ratio):
                 _y = np.vstack((_y, [_y_edge]))
                 _x = np.vstack((_x, [0]))
-                _y = np.vstack((_x, [_y_edge]))
+                _y = np.vstack((_y, [_y_edge]))
                 _x = np.vstack((_x, [(x_size + buf_size * 2) * ratio]))
                 _z = np.vstack((_z, [[0], [0]]))
 
-            func = interpolate.interp2d(_x, _y, _z, kind='linear')
+            # test 插值原始点 ----------------------------------------------------------------------------------------------------------------------------------
+            if 0:
+                fig, ax = plt.subplots()
+                # ax.imshow(_z_height, interpolation='nearest', cmap=plt.cm.gray)
+                # xnew, ynew = np.mgrid[0:(x_size + buf_size * 2) * ratio, 0:(y_size + buf_size * 2) * ratio]
+                ax = plt.subplot(111, projection='3d')
+                ax.scatter(_x,_y,_z, s=1, c='r')
+                plt.show()
+            # test  ----------------------------------------------------------------------------------------------------------------------------------
+
+            # _xy = np.hstack((_x, _y))
+            # grid = np.mgrid[0:(x_size + buf_size * 2) * ratio, 0:(y_size + buf_size * 2) * ratio]
+            # _z_d_new = interpolate.griddata(_xy, _z, grid, method='linear')
+            func = interpolate.interp2d(_x, _y, _z,  kind='linear')
             _x_new = np.arange(0, (x_size + buf_size * 2) * ratio)
             _y_new = np.arange(0, (y_size + buf_size * 2) * ratio)
             _z_d_new = func(_x_new, _y_new)
+
+            # test  插值结果 ----------------------------------------------------------------------------------------------------------------------------------
+            if 0:
+                fig, ax = plt.subplots()
+                # ax.imshow(_z_height, interpolation='nearest', cmap=plt.cm.gray)
+                # xnew, ynew = np.mgrid[0:(x_size + buf_size * 2) * ratio:500j, 0:(y_size + buf_size * 2) * ratio]
+                # _x_new, _y_new = np.meshgrid(_x_new, _y_new)
+                ax = plt.subplot(111, projection='3d')
+                ax.plot_surface(_x_new,_y_new,_z_d_new, rstride=1, cstride=1, cmap='rainbow')
+                plt.show()
+            # test----------------------------------------------------------------------------------------------------------------------------------
+
             _z_low_with_buf = _z_low_with_buf + _z_d_new
 
 
@@ -190,7 +215,7 @@ def merge_and_cut(filename_low, filename_height, output_dir, start_zoom, end_zoo
                     y_low = y + buf_size * ratio
                     x_low = x + buf_size * ratio
                     _z_low_v = _z_low_with_buf[y_low][x_low]
-                    if _z_height_v != 0 and _z_height_v != _z_low_v:
+                    if abs(_z_height_v - 0) > 0.001 and abs(_z_height_v - _z_low_v) > 0.001:
                         _z_low_with_buf[y_low][x_low] = _z_height_v
 
         # cut

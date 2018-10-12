@@ -28,12 +28,13 @@ if __name__ == '__main__':
 
         pl.legend(loc='lower right')
         pl.show()
-    if 1:
+    if 0:
         def func(x,y):
             return (x+y)*np.exp(-5*(x**2+y**2))
         x,y=np.mgrid[-1:1:8j,-1:1:8j]
         z=func(x,y)
         func=interpolate.interp2d(x,y,z,kind='linear')
+
 
         xnew=np.linspace(-1,1,100)
         ynew=np.linspace(-1,1,100)
@@ -48,11 +49,16 @@ if __name__ == '__main__':
         x = [0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 5, 5]
         y = [0, 1, 2, 3, 4, 5, 0, 5, 0, 2, 3, 5, 0, 2, 3, 5, 0, 5, 0, 1, 2, 3, 4, 5]
         z = [0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 7, 0, 0, 5, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        fig, ax = plt.subplots()
+        # ax.imshow(_z_height, interpolation='nearest', cmap=plt.cm.gray)
+        # xnew, ynew = np.mgrid[0:(x_size + buf_size * 2) * ratio, 0:(y_size + buf_size * 2) * ratio]
+        ax = plt.subplot(111, projection='3d')
+        ax.scatter(x, y, z, c='r')
         func = interpolate.interp2d(x, y, z, kind='linear')
         xnew = np.linspace(0, 5, 100)
         ynew = np.linspace(0, 5, 100)
         znew = func(xnew, ynew)
-        xnew, ynew = np.mgrid[-1:1:100j, -1:1:100j]  # 统一变成二维，便于下一步画图
+        xnew, ynew = np.mgrid[0:5:100j, 0:5:100j]  # 统一变成二维，便于下一步画图
         ax = plt.subplot(111, projection='3d')
         ax.plot_surface(xnew, ynew, znew)
         plt.show()
