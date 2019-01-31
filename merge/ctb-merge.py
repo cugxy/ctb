@@ -1,4 +1,5 @@
-import os, math
+import os
+import math
 import gdal
 import numpy as np
 import cv2
@@ -15,6 +16,7 @@ import pylab as pl
 import mpl_toolkits.mplot3d
 from IPython import embed
 
+
 def tile_level(z):
     assert(z >= 0)
     x = 2 ** (z+1)
@@ -24,22 +26,22 @@ def tile_level(z):
 
 
 def get_data_bound(z_value, alpha):
-    '''
+    """
     获取 tif 有效值边界坐标
-    :param data_set:
+    :param z_value:
     :param alpha:
     :return:
-    '''
+    """
     if z_value is None:
         return None
-    z_value = np.insert(z_value, 0, 0, axis=0) # 添加 0 包围盒
+    z_value = np.insert(z_value, 0, 0, axis=0)      # 添加 0 包围盒
     z_value = np.insert(z_value, 0, 0, axis=1)
     z_value = np.insert(z_value, z_value.shape[0], 0, axis=0)
     z_value = np.insert(z_value, z_value.shape[1], 0, axis=1)
     contours = measure.find_contours(z_value, alpha)
     yx = np.zeros(shape=(0, 2))
     for contour in iter(contours):
-        contour = np.around(contour) # 取整
+        contour = np.around(contour)    # 取整
         yx = np.vstack((yx, contour))
     _tmp = yx + (1, 0)                  # 偏移
     _tmp_yx = np.vstack((yx, _tmp))
@@ -51,29 +53,28 @@ def get_data_bound(z_value, alpha):
     _tmp_yx = np.vstack((_tmp_yx, _tmp))
     yx = np.vstack((yx, _tmp_yx))
     _tmp = yx.astype('i4')
-    _tmp = _tmp.view('S8').flatten()  # 转换成 view 处理，即字符串
+    _tmp = _tmp.view('S8').flatten()    # 转换成 view 处理，即字符串
     keep = np.unique(_tmp, return_index=True)[1]  # 去重 得到索引
     yx = yx[keep].astype('i4')
     yx = np.array([_yx for _yx in yx if 0 <= _yx[0] < z_value.shape[0] and 0 <= _yx[1] < z_value.shape[1]]) # 保证范围内
     yx_r = np.zeros(shape=(0, 2))
-    for _yx in yx:  # 保证有值
+    for _yx in yx:                      # 保证有值
         if z_value[_yx[0], _yx[1]] != 0:
             yx_r = np.vstack((yx_r, _yx))
-    return yx_r - 1   # 减去 0 包围盒
+    return yx_r - 1                     # 减去 0 包围盒
 
 
 def merge_and_cut(filename_low, filename_height, output_dir, start_zoom, end_zoom):
-    if (not os.path.exists(filename_low)) or (not os.path.exists(filename_height)):
+    if not os.path.exists(filename_low) or not os.path.exists(filename_height):
         return None
     data_set_low = gdal.Open(filename_low)
     if data_set_low is None:
-        print('Read %s failed' %filename_low)
+        print('Read %s failed' % filename_low)
         return None
     data_set_height = gdal.Open(filename_height)
     if data_set_height is None:
         print('Read %s failed' % filename_height)
         return None
-
     band_low = data_set_low.GetRasterBand(1)
     if band_low is None:
         print('Read %s band failed' % filename_low)
@@ -106,39 +107,26 @@ def merge_and_cut(filename_low, filename_height, output_dir, start_zoom, end_zoo
         return
     _, value = next(iter(bounds.items()))
     _zoom_size_low = round((value[2] - value[0]) / dx_low)
-    buf_size = _zoom_size_low + 128 # 设置 buf 大小大于一块地形的 size，保证按块取数据时，块是完整的
+    buf_size = _zoom_size_low + 128     # 设置 buf 大小大于一块地形的 size，保证按块取数据时，块是完整的
 
-    z_low_with_buf = band_low.ReadAsArray(x_offset - buf_size, y_offset - buf_size, x_size + buf_size * 2, y_size + buf_size * 2).astype('f4')
+    z_low_with_buf = band_low.ReadAsArray(x_offset - buf_size, y_offset - buf_size, x_size + buf_size * 2, y_size +
+                                          buf_size * 2).astype('f4')
     # z_height = band_height.ReadAsArray(0, 0, x_size_height, y_size_height).astype('f4')
 
     for zoom in range(start_zoom, end_zoom + 1):
-        # merge
-        # test-------------------------------------------------------------------------------------------------------------------------
-        # zoom += 1
-        # test-------------------------------------------------------------------------------------------------------------------------
         ratio = 2 ** (zoom - start_zoom)
         dsize_low = ((x_size + buf_size * 2) * ratio, (y_size + buf_size * 2) * ratio)
         _z_low_with_buf = cv2.resize(src=z_low_with_buf, dsize=dsize_low, interpolation=cv2.INTER_LINEAR)
         dsize_height = (x_size * ratio, y_size * ratio)
         _z_height = cv2.resize(src=z_height, dsize=dsize_height, interpolation=cv2.INTER_CUBIC)
-        z_height = band_height.ReadAsArray(0, 0, x_size_height, y_size_height, x_size * ratio, y_size * ratio).astype('f4')
+        z_height = band_height.ReadAsArray(0, 0, x_size_height, y_size_height, x_size * ratio, y_size * ratio).\
+            astype('f4')
         _z_height = z_height
         bound_yx = get_data_bound(_z_height, 0.8)
-        # test 展示边界 ----------------------------------------------------------------------------------------------------------------------------------
-        if 0:
-            fig, ax = plt.subplots()
-            ax.imshow(_z_height, interpolation='nearest', cmap=plt.cm.gray)
-            ax.scatter(bound_yx[:,1], bound_yx[:,0], alpha=0.6)
-            ax.axis('image')
-            ax.set_xticks([])
-            ax.set_yticks([])
-            plt.show()
-        # test----------------------------------------------------------------------------------------------------------------------------------
-
         # 如果没有边界 则，不融合，直接采用低精度数据 cut
         if bound_yx.shape[0] != 0:
             bound_yx = bound_yx.astype('i4')
-            _x = np.zeros(shape=(0, 1)) # x y z 添加边界值
+            _x = np.zeros(shape=(0, 1))     # x y z 添加边界值
             _y = np.zeros(shape=(0, 1))
             _z = np.zeros(shape=(0, 1))
             for _bound_yx in bound_yx:
@@ -177,16 +165,6 @@ def merge_and_cut(filename_low, filename_height, output_dir, start_zoom, end_zoo
                 _x = np.vstack((_x, [(x_size + buf_size * 2) * ratio]))
                 _z = np.vstack((_z, [[0], [0]]))
 
-            # test 插值原始点 ----------------------------------------------------------------------------------------------------------------------------------
-            if 0:
-                fig, ax = plt.subplots()
-                # ax.imshow(_z_height, interpolation='nearest', cmap=plt.cm.gray)
-                # xnew, ynew = np.mgrid[0:(x_size + buf_size * 2) * ratio, 0:(y_size + buf_size * 2) * ratio]
-                ax = plt.subplot(111, projection='3d')
-                ax.scatter(_x,_y,_z, s=1, c='r')
-                plt.show()
-            # test  ----------------------------------------------------------------------------------------------------------------------------------
-
             # _xy = np.hstack((_x, _y))
             # grid = np.mgrid[0:(x_size + buf_size * 2) * ratio, 0:(y_size + buf_size * 2) * ratio]
             # _z_d_new = interpolate.griddata(_xy, _z, grid, method='linear')
@@ -195,19 +173,7 @@ def merge_and_cut(filename_low, filename_height, output_dir, start_zoom, end_zoo
             _y_new = np.arange(0, (y_size + buf_size * 2) * ratio)
             _z_d_new = func(_x_new, _y_new)
 
-            # test  插值结果 ----------------------------------------------------------------------------------------------------------------------------------
-            if 0:
-                fig, ax = plt.subplots()
-                # ax.imshow(_z_height, interpolation='nearest', cmap=plt.cm.gray)
-                # xnew, ynew = np.mgrid[0:(x_size + buf_size * 2) * ratio:500j, 0:(y_size + buf_size * 2) * ratio]
-                # _x_new, _y_new = np.meshgrid(_x_new, _y_new)
-                ax = plt.subplot(111, projection='3d')
-                ax.plot_surface(_x_new,_y_new,_z_d_new, rstride=1, cstride=1, cmap='rainbow')
-                plt.show()
-            # test----------------------------------------------------------------------------------------------------------------------------------
-
             _z_low_with_buf = _z_low_with_buf + _z_d_new
-
 
             for y in range(y_size * ratio):
                 for x in range(x_size * ratio):
@@ -217,11 +183,9 @@ def merge_and_cut(filename_low, filename_height, output_dir, start_zoom, end_zoo
                     _z_low_v = _z_low_with_buf[y_low][x_low]
                     if abs(_z_height_v - 0) > 0.001 and abs(_z_height_v - _z_low_v) > 0.001:
                         _z_low_with_buf[y_low][x_low] = _z_height_v
-
         # cut
         z_merged = _z_low_with_buf
         blc_bounds = get_tif_tile_bounds(filename_height, output_dir, zoom)
-        # [[min_lng, min_lat, max_lng, max_lat], ...]
         for fname in blc_bounds:
             blc_bound = blc_bounds[fname]
             blc_x_min_low = round((blc_bound[0] - min_lng_low) / dx_low)
@@ -621,13 +585,13 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
 
 
 def write_terrain(fname, xyz, idx):
-    '''
-	mash 三角网写入 terrain 文件，当该文件存在时，直接覆盖
-	:param fname: terrain文件名
-	:param xyz: 顶点
-	:param idx: 索引
-	:return: None
-	'''
+    """
+    mash 三角网写入 terrain 文件，当该文件存在时，直接覆盖
+    :param fname: terrain文件名
+    :param xyz: 顶点
+    :param idx: 索引
+    :return: None
+    """
     wkts = []
     for _ in range(idx.shape[0]):
         tri = xyz[idx[_]]

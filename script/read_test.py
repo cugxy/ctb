@@ -15,8 +15,6 @@ def read_tif(filename):
     return band.ReadAsArray(30, 0, 20, 20, 10, 10)
 
 
-
-
 if __name__ == '__main__':
     if 1:
         filename = r'E:\xy\doc\dem\dem.tif'
