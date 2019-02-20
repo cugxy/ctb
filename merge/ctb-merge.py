@@ -8,6 +8,7 @@ from quantized_mesh_tile.terrain import TerrainTile
 from quantized_mesh_tile.global_geodetic import GlobalGeodetic
 from quantized_mesh_tile.topology import TerrainTopology
 
+
 def tile_level(z):
     assert(z >= 0)
     x = 2 ** (z+1)
@@ -17,12 +18,12 @@ def tile_level(z):
 
 
 def get_tif_tile_bounds(filename, output_dir, zoom):
-    '''
+    """
     根据 cesium 层级分块，读取 tif，利用 zoom 求得每一块的 gps 包围盒
     :param filename: tif 文件路径
     :param zoom: 层级
     :return: bounds [[min_lng, min_lat, max_lng, max_lat], ...]
-    '''
+    """
     if not os.path.exists(filename):
         return None
     data_set = gdal.Open(filename)
@@ -65,11 +66,11 @@ def get_tif_tile_bounds(filename, output_dir, zoom):
 
 
 def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoom):
-    '''
+    """
     在低精度 tif 中，找到高精度 tif 所影响的地形块，并修改受影响值 生成 terrain
     :param filename: tif 文件路径
     :param zoom: 层级
-    '''
+    """
     if (not os.path.exists(filename_low)) or (not os.path.exists(filename_height)):
         return None
     data_set_low = gdal.Open(filename_low)
@@ -136,7 +137,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
                                          zoom_size_low + buf_size * 2,
                                          zoom_size_low + buf_size * 2).astype('f4')
             # z_low 处理成 平滑处理
-            z_low = cv2.blur(z_low,(7, 7))
+            # z_low = cv2.blur(z_low,(7, 7))
             z_low = z_low[buf_size:-buf_size, buf_size:-buf_size]
 
             # 读取 高精度 地形
@@ -206,13 +207,13 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
 
 
 def write_terrain(fname, xyz, idx):
-    '''
-	mash 三角网写入 terrain 文件，当该文件存在时，直接覆盖
-	:param fname: terrain文件名
-	:param xyz: 顶点
-	:param idx: 索引
-	:return: None
-	'''
+    """
+    mash 三角网写入 terrain 文件，当该文件存在时，直接覆盖
+    :param fname: terrain文件名
+    :param xyz: 顶点
+    :param idx: 索引
+    :return: None
+    """
     wkts = []
     for _ in range(idx.shape[0]):
         tri = xyz[idx[_]]
@@ -226,13 +227,13 @@ def write_terrain(fname, xyz, idx):
         os.makedirs(os.path.dirname(fname))
     if os.path.exists('%s.terrain' %fname):
         os.remove('%s.terrain' %fname)
-    tile.toFile('%s.terrain' %fname, gzipped=True)
+    tile.toFile('%s.terrain' %fname, gzipped=False)
 
 
 if __name__ == '__main__':
-    filename_low = r'E:\xy\doc\dem\shaoguan.tif'
-    filename = r'E:\xy\doc\dem\dem.tif'
-    output_dir = r'E:\xy\doc\dem\result-blur'
+    filename_low = '/Users/cugxy/Documents/git/ctb-merge/data/dem/shaoguan.tif'
+    filename = '/Users/cugxy/Documents/git/ctb-merge/data/dem/dem.tif'
+    output_dir = '/Users/cugxy/Documents/git/ctb-merge/data/dem/result'
     zoom = 13
     end_zoom = 16
     r = get_intersect_block(filename_low, filename, output_dir, zoom, end_zoom)
