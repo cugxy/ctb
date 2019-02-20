@@ -136,7 +136,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
                                          zoom_size_low + buf_size * 2,
                                          zoom_size_low + buf_size * 2).astype('f4')
             # z_low 处理成 平滑处理
-            z_low = cv2.blur(z_low,(7, 7))
+            # z_low = cv2.blur(z_low,(7, 7))
             z_low = z_low[buf_size:-buf_size, buf_size:-buf_size]
 
             # 读取 高精度 地形
@@ -232,7 +232,7 @@ def write_terrain(fname, xyz, idx):
 if __name__ == '__main__':
     filename_low = r'E:\xy\doc\dem\shaoguan.tif'
     filename = r'E:\xy\doc\dem\dem.tif'
-    output_dir = r'E:\xy\doc\dem\result-blur'
+    output_dir = r'E:\xy\doc\dem\result-2.0'
     zoom = 13
     end_zoom = 16
     r = get_intersect_block(filename_low, filename, output_dir, zoom, end_zoom)
