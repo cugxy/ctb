@@ -8,6 +8,10 @@ from quantized_mesh_tile.terrain import TerrainTile
 from quantized_mesh_tile.global_geodetic import GlobalGeodetic
 from quantized_mesh_tile.topology import TerrainTopology
 
+
+InvalidValue = -8000
+
+
 def tile_level(z):
     assert(z >= 0)
     x = 2 ** (z+1)
@@ -17,12 +21,12 @@ def tile_level(z):
 
 
 def get_tif_tile_bounds(filename, output_dir, zoom):
-    '''
+    """
     根据 cesium 层级分块，读取 tif，利用 zoom 求得每一块的 gps 包围盒
     :param filename: tif 文件路径
     :param zoom: 层级
     :return: bounds [[min_lng, min_lat, max_lng, max_lat], ...]
-    '''
+    """
     if not os.path.exists(filename):
         return None
     data_set = gdal.Open(filename)
@@ -65,11 +69,11 @@ def get_tif_tile_bounds(filename, output_dir, zoom):
 
 
 def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoom):
-    '''
+    """
     在低精度 tif 中，找到高精度 tif 所影响的地形块，并修改受影响值 生成 terrain
     :param filename: tif 文件路径
     :param zoom: 层级
-    '''
+    """
     if (not os.path.exists(filename_low)) or (not os.path.exists(filename_height)):
         return None
     data_set_low = gdal.Open(filename_low)
@@ -111,7 +115,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
             y_max_low = round((bound[1] - y0_low) / dy_low)
 
             # 读取低精度 地形 要求低精度地形完整包含整块， 读取时 添加 buffer 防止平滑处理时边界错位
-            buf_size = 8
+            buf_size = 32
             buf_size_low = round(buf_size / zoom_size_low * (x_max_low - x_min_low))
             x_begine_low = x_min_low - buf_size_low
             if x_begine_low > x_size_low or x_begine_low < 0:
@@ -136,7 +140,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
                                          zoom_size_low + buf_size * 2,
                                          zoom_size_low + buf_size * 2).astype('f4')
             # z_low 处理成 平滑处理
-            # z_low = cv2.blur(z_low,(7, 7))
+            z_low = cv2.blur(z_low,(7, 7))
             z_low = z_low[buf_size:-buf_size, buf_size:-buf_size]
 
             # 读取 高精度 地形
@@ -189,7 +193,7 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
                         continue
                     z_height_v = z_height[y][x]
                     z_low_v = z_low[y + y_offset][x + x_offset]
-                    if z_height_v != 0 and z_height_v != z_low_v:
+                    if z_height_v > InvalidValue and z_height_v != 0 and z_height_v != z_low_v:
                         z_low[y + y_offset][x + x_offset] = z_height_v
             points_xyz = []
             z_low = np.array(z_low)
@@ -206,13 +210,13 @@ def get_intersect_block(filename_low, filename_height, output_dir, zoom, end_zoo
 
 
 def write_terrain(fname, xyz, idx):
-    '''
-	mash 三角网写入 terrain 文件，当该文件存在时，直接覆盖
-	:param fname: terrain文件名
-	:param xyz: 顶点
-	:param idx: 索引
-	:return: None
-	'''
+    """
+    mash 三角网写入 terrain 文件，当该文件存在时，直接覆盖
+    :param fname: terrain文件名
+    :param xyz: 顶点
+    :param idx: 索引
+    :return: None
+    """
     wkts = []
     for _ in range(idx.shape[0]):
         tri = xyz[idx[_]]
@@ -226,13 +230,13 @@ def write_terrain(fname, xyz, idx):
         os.makedirs(os.path.dirname(fname))
     if os.path.exists('%s.terrain' %fname):
         os.remove('%s.terrain' %fname)
-    tile.toFile('%s.terrain' %fname, gzipped=True)
+    tile.toFile('%s.terrain' %fname, gzipped=False)
 
 
 if __name__ == '__main__':
-    filename_low = r'E:\xy\doc\dem\shaoguan.tif'
-    filename = r'E:\xy\doc\dem\dem.tif'
-    output_dir = r'E:\xy\doc\dem\result-2.0'
+    filename_low = r'/Users/cugxy/Documents/git/LiGlobal/testdata/tif/N30E97.tif'
+    filename = r'/Users/cugxy/Documents/git/LiGlobal/testdata/tif/tanglan.tif'
+    output_dir = r'/Users/cugxy/Documents/git/LiGlobal/testdata/tif/result'
     zoom = 13
     end_zoom = 16
     r = get_intersect_block(filename_low, filename, output_dir, zoom, end_zoom)
